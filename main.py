@@ -90,7 +90,6 @@ def cmd_reindex(args):
         ch_num = _chapter_num(os.path.basename(filepath))
         if not ch_num:
             continue
-        ch_num = int(m.group(1))
         with open(filepath, "r", encoding="utf-8") as f:
             text = f.read()
         # Strip markdown title

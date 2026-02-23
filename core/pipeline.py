@@ -296,8 +296,19 @@ def run_chapter(
             # Targeted rewrite for first error
             if errors:
                 fix = errors[0]
+                # Build rewrite context from scene contracts
+                from core.context_builder import _build_scene_contract, _build_pov_knowledge
+                rewrite_ctx_parts = [_build_scene_contract(sc) for sc in scene_contracts]
+                pov_chars = set(sc.get("pov_character", "") for sc in scene_contracts)
+                for pov in pov_chars:
+                    if pov:
+                        pk = _build_pov_knowledge(session, pov)
+                        if pk:
+                            rewrite_ctx_parts.append(pk)
+                rewrite_ctx = "\n\n".join(p for p in rewrite_ctx_parts if p)
                 chapter_text = targeted_rewrite(
-                    chapter_text, fix.fix_instruction, fix.location, llm
+                    chapter_text, fix.fix_instruction, fix.location, llm,
+                    scene_prompt=rewrite_ctx,
                 )
                 # Re-check
                 report = run_consistency_check(chapter_number, chapter_text, scene_contracts, session, llm)

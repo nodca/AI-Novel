@@ -31,11 +31,23 @@ def write_scenes(
 
     scenes = []
     bridge_memo = ""
+    accumulated_text = ""
 
     for i, sc in enumerate(scene_contracts):
         _check_control(should_cancel=should_cancel, should_pause=should_pause)
         scene_num = sc.get("scene_number", i + 1)
         logger.info(f"Generating scene {scene_num}/{len(scene_contracts)}...")
+
+        # #2: POV isolation - clear bridge_memo if POV changed
+        if i > 0:
+            prev_pov = scene_contracts[i - 1].get("pov_character", "")
+            curr_pov = sc.get("pov_character", "")
+            if prev_pov and curr_pov and prev_pov != curr_pov:
+                logger.info(f"POV changed ({prev_pov} -> {curr_pov}), clearing bridge memo")
+                bridge_memo = ""
+
+        # #3: chapter context - last 1500 chars of accumulated text
+        chapter_context = accumulated_text[-1500:] if accumulated_text else ""
 
         prompt = build_scene_prompt(
             scene_contract=sc,
@@ -44,6 +56,7 @@ def write_scenes(
             style_guide=style_guide,
             bridge_memo=bridge_memo,
             config=config,
+            chapter_context=chapter_context,
         )
 
         scene_text = llm_client.call_opus(prompt)
@@ -53,6 +66,7 @@ def write_scenes(
             continue
 
         scenes.append(scene_text.strip())
+        accumulated_text += "\n\n" + scene_text.strip()
 
         # Generate bridge memo for next scene
         if i < len(scene_contracts) - 1:
@@ -62,16 +76,22 @@ def write_scenes(
     return "\n\n---\n\n".join(scenes)
 
 
-def targeted_rewrite(chapter_text: str, fix_instruction: str, location: str, llm_client) -> str:
+def targeted_rewrite(chapter_text: str, fix_instruction: str, location: str,
+                     llm_client, scene_prompt: str = "") -> str:
     """Rewrite a specific section of the chapter based on fix instruction."""
-    prompt = f"""请修改以下章节中的问题段落。
+    parts = []
+    if scene_prompt:
+        parts.append("【原始写作上下文（供参考，确保修改后仍符合所有约束）】")
+        parts.append(scene_prompt[-4000:])
+        parts.append("")
+    parts.append("请修改以下章节中的问题段落。")
+    parts.append("")
+    parts.append(f"【问题位置】{location}")
+    parts.append(f"【修复指令】{fix_instruction}")
+    parts.append("")
+    parts.append("【完整章节】")
+    parts.append(chapter_text)
+    parts.append("")
+    parts.append("请输出修改后的完整章节正文。只修改问题段落，其他部分保持不变。")
 
-【问题位置】{location}
-【修复指令】{fix_instruction}
-
-【完整章节】
-{chapter_text}
-
-请输出修改后的完整章节正文。只修改问题段落，其他部分保持不变。"""
-
-    return llm_client.call_opus(prompt)
+    return llm_client.call_opus("\n".join(parts))

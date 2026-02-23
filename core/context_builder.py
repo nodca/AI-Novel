@@ -14,6 +14,7 @@ def build_scene_prompt(
     style_guide: str,
     bridge_memo: str,
     config: dict,
+    chapter_context: str = "",
 ) -> str:
     """Build the full prompt for a single scene, respecting token budget and POV sandbox."""
     from db.queries import (get_characters, get_pov_knowledge, get_relationships,
@@ -37,6 +38,8 @@ def build_scene_prompt(
     must_parts.append(_build_bridge_memo(bridge_memo))
 
     important_parts = []
+    if chapter_context:
+        important_parts.append("【本章已生成内容（最近片段）】\n" + chapter_context)
     important_parts.append(_build_pov_knowledge(session, pov))
     important_parts.append(_build_relationships(session, chars))
     important_parts.append(_build_foreshadow_instructions(session, scene_contract, chapter_num))
@@ -93,6 +96,7 @@ def generate_bridge_memo(prev_scene_text: str, llm_client) -> str:
 
 def _build_system_role() -> str:
     return ("你是一位专业的网络小说作家。请根据以下信息写作场景正文。\n"
+            "【写作铁律：Show, Don't Tell】绝对禁止直接总结或宣告角色的情绪状态（如'他很生气'、'她感到悲伤'、'众人很震惊'）。必须通过具体的五感描写、微表情、肢体动作、呼吸节奏或环境互动来呈现（如'他攥紧了拳头，指节发白'）。\n"
             "重要约束：禁止编造前文未发生的具体细节（伤痕、物品状态、具体战绩、身体特征）。"
             "角色对白中引用过去事件时，只使用上下文中明确提供的信息；不确定的用模糊表达带过，不要捏造具体情节。\n"
             "文笔约束：禁止使用'不是……而是……'这类模板句式。")
@@ -120,10 +124,31 @@ def _build_bridge_memo(bridge_memo: str) -> str:
 
 def _build_scene_contract(sc: dict) -> str:
     lines = ["【场景合同 - 场景" + str(sc.get("scene_number", "?")) + "】"]
+    
+    scene_type = sc.get("scene_type", "transition")
+    if scene_type in ("action", "confrontation"):
+        pacing = "【高压/快节奏】多用短句，动作与对话凌厉连贯，凸显压迫感或激烈冲突。"
+    elif scene_type in ("reward", "daily"):
+        pacing = "【低压/慢节奏】节奏舒缓，细节描写丰富，多展现环境氛围与角色的内心松弛感，允许细腻互动。"
+    else:
+        pacing = "【中压/平稳】张弛有度，聚焦于信息传递和氛围铺垫。"
+    lines.append("文笔节奏：" + pacing)
+
+    emotion = sc.get("reader_emotion_target", "")
+    if emotion:
+        lines.append(f"【导演指令】本场景的核心目的是让读者感受到『{emotion}』，请通过角色的具体行动、对白和环境渲染来实现。")
+
+    focus = sc.get("core_focus", "")
+    if focus:
+        lines.append("【核心焦点】" + focus)
+
     lines.append("POV角色：" + sc.get("pov_character", "未指定"))
+    pov_goal = sc.get("pov_goal", "")
+    if pov_goal:
+        lines.append("  -> 当前动机/目标：" + pov_goal)
+
     chars = sc.get("characters", [])
     lines.append("出场角色：" + "、".join(chars))
-    lines.append("节奏：" + sc.get("tone_target", ""))
     lines.append("字数：" + str(sc.get("word_count", 800)) + "字")
 
     events = sc.get("must_events", [])

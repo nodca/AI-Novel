@@ -1,0 +1,109 @@
+name: windows-desktop-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            desktop/package-lock.json
+            desktop/frontend/package-lock.json
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Install frontend deps
+        run: npm ci --prefix desktop/frontend
+
+      - name: Install desktop deps
+        run: npm ci --prefix desktop
+
+      - name: Validate tag and desktop version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^desktop-v(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z\.-]+)?)$') {
+            throw "Tag format must be desktop-v<semver>, got: $tag"
+          }
+          $tagVersion = $Matches.version
+          $pkg = Get-Content desktop/package.json -Raw | ConvertFrom-Json
+          $pkgVersion = [string]$pkg.version
+          if ([string]::IsNullOrWhiteSpace($pkgVersion)) {
+            throw "desktop/package.json version is empty"
+          }
+          if ($tagVersion -ne $pkgVersion) {
+            throw "Tag version '$tagVersion' does not match desktop/package.json version '$pkgVersion'"
+          }
+          Write-Host "Version check passed: $tagVersion"
+
+      - name: Build Windows installer (manual)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: npm --prefix desktop run dist:win
+
+      - name: Build + publish Windows installer (tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm --prefix desktop run dist:win:publish
+
+      - name: Verify build artifacts
+        shell: pwsh
+        env:
+          IS_TAG_BUILD: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          $installer = Get-ChildItem desktop/release -Filter "ai-novel-desktop-*-x64.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installer) {
+            throw "Installer not found under desktop/release"
+          }
+          Write-Host "Installer found: $($installer.Name)"
+
+          $isTagBuild = "${env:IS_TAG_BUILD}" -eq "true"
+          if ($isTagBuild) {
+            $blockmap = Get-ChildItem desktop/release -Filter "*.blockmap" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $blockmap) {
+              throw ".blockmap not found under desktop/release"
+            }
+            Write-Host "Blockmap found: $($blockmap.Name)"
+
+            $latestYml = "desktop/release/latest.yml"
+            if (-not (Test-Path $latestYml)) {
+              throw "latest.yml not found under desktop/release"
+            }
+            Write-Host "Update manifest found: latest.yml"
+          }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-novel-desktop-windows
+          path: desktop/release/**
+          if-no-files-found: error

@@ -1,0 +1,70 @@
+{
+  "name": "ai-novel-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron shell for AI-Novel multi-project workspace",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:electron": "cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron electron/main.cjs",
+    "dev": "concurrently -k \"npm run dev:frontend\" \"wait-on http://127.0.0.1:5173 && npm run dev:electron\"",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "python scripts/build_backend.py",
+    "dist:win": "npm run build:frontend && npm run build:backend && cross-env GH_OWNER=local GH_REPO=local electron-builder --win nsis",
+    "dist:win:publish": "npm run build:frontend && npm run build:backend && electron-builder --win nsis --publish always",
+    "dist:win:dir": "npm run build:frontend && npm run build:backend && cross-env GH_OWNER=local GH_REPO=local electron-builder --win dir",
+    "start": "electron electron/main.cjs"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.ainovel.desktop",
+    "productName": "AI-Novel Desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "frontend/dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".backend-dist/ai-novel-backend.exe",
+        "to": "backend/ai-novel-backend.exe"
+      }
+    ],
+    "artifactName": "ai-novel-desktop-${version}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "${env.GH_OWNER}",
+        "repo": "${env.GH_REPO}",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

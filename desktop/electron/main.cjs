@@ -92,8 +92,8 @@ function setupAutoUpdater(win) {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = updateChannel !== "stable";
-  // Prefer reliability over patch size. Differential download can fail silently on some machines.
-  autoUpdater.disableDifferentialDownload = true;
+  // Use differential download to reduce patch size when blockmap is available.
+  autoUpdater.disableDifferentialDownload = false;
 
   let checkInFlight = false;
   let promptingUpdate = false;

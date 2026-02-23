@@ -5,8 +5,21 @@ const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
 let backendProcess = null;
+let mainWindow = null;
 let updaterStartupTimer = null;
 let updaterRetryTimer = null;
+let runUpdaterCheck = null;
+let updaterCheckInFlight = false;
+
+function emitUpdaterStatus(event, detail = "") {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("ai-novel:update-status", {
+      event,
+      detail,
+      at: new Date().toISOString()
+    });
+  }
+}
 
 function resolveBundledBackendExe() {
   const candidate = path.join(process.resourcesPath, "backend", "ai-novel-backend.exe");
@@ -83,7 +96,14 @@ function createWindow() {
 }
 
 function setupAutoUpdater(win) {
+  mainWindow = win;
   if (!app.isPackaged) {
+    runUpdaterCheck = async () => ({
+      ok: false,
+      status: "not-packaged",
+      message: "仅打包版本支持自动更新检查。"
+    });
+    emitUpdaterStatus("not-packaged", "当前为开发模式，无法检查自动更新。");
     return;
   }
 
@@ -95,13 +115,13 @@ function setupAutoUpdater(win) {
   // Use differential download to reduce patch size when blockmap is available.
   autoUpdater.disableDifferentialDownload = false;
 
-  let checkInFlight = false;
   let promptingUpdate = false;
   let downloadingUpdate = false;
   let deferredVersion = "";
 
   autoUpdater.on("checking-for-update", () => {
     console.log("[updater] checking-for-update");
+    emitUpdaterStatus("checking", "正在检查更新...");
   });
 
   autoUpdater.on("update-available", async (info) => {
@@ -112,8 +132,10 @@ function setupAutoUpdater(win) {
     const version = String(info.version || "");
     if (deferredVersion && version && deferredVersion === version) {
       console.log("[updater] skipped deferred version", version);
+      emitUpdaterStatus("deferred", version);
       return;
     }
+    emitUpdaterStatus("update-available", version);
     promptingUpdate = true;
     try {
       if (win && !win.isDestroyed()) {
@@ -134,13 +156,16 @@ function setupAutoUpdater(win) {
       });
       if (result.response !== 0) {
         deferredVersion = version;
+        emitUpdaterStatus("deferred", version);
         return;
       }
       downloadingUpdate = true;
+      emitUpdaterStatus("downloading", "0");
       autoUpdater.downloadUpdate().catch(async (err) => {
         downloadingUpdate = false;
         const detail = err && err.message ? err.message : "unknown";
         console.error("[updater] download failed", detail);
+        emitUpdaterStatus("error", detail);
         await dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
           type: "error",
           buttons: ["知道了"],
@@ -157,21 +182,26 @@ function setupAutoUpdater(win) {
 
   autoUpdater.on("update-not-available", () => {
     console.log("[updater] update-not-available");
+    emitUpdaterStatus("up-to-date", "当前已是最新版本。");
   });
 
   autoUpdater.on("error", (err) => {
     downloadingUpdate = false;
-    console.error("[updater] error", err ? err.message : "unknown");
+    const detail = err && err.message ? err.message : "unknown";
+    console.error("[updater] error", detail);
+    emitUpdaterStatus("error", detail);
   });
 
   autoUpdater.on("download-progress", (progress) => {
     const percent = Number(progress && progress.percent) || 0;
     console.log(`[updater] download-progress ${percent.toFixed(1)}%`);
+    emitUpdaterStatus("downloading", percent.toFixed(1));
   });
 
   autoUpdater.on("update-downloaded", async (info) => {
     downloadingUpdate = false;
     console.log("[updater] update-downloaded", info.version);
+    emitUpdaterStatus("downloaded", String(info.version || ""));
     if (win && !win.isDestroyed()) {
       if (win.isMinimized()) {
         win.restore();
@@ -193,31 +223,61 @@ function setupAutoUpdater(win) {
     }
   });
 
-  const runCheck = (reason) => {
-    if (checkInFlight) {
-      return;
+  runUpdaterCheck = async (reason) => {
+    if (updaterCheckInFlight) {
+      return {
+        ok: false,
+        status: "busy",
+        message: "正在检查更新，请稍后。"
+      };
     }
-    checkInFlight = true;
-    autoUpdater
-      .checkForUpdates()
-      .catch((err) => {
-        console.error(`[updater] check failed (${reason})`, err ? err.message : "unknown");
-      })
-      .finally(() => {
-        checkInFlight = false;
-      });
+    updaterCheckInFlight = true;
+    try {
+      await autoUpdater.checkForUpdates();
+      return {
+        ok: true,
+        status: "checking",
+        message: reason === "manual" ? "已发起手动检查更新。" : "已发起自动检查更新。"
+      };
+    } catch (err) {
+      const detail = err && err.message ? err.message : "unknown";
+      console.error(`[updater] check failed (${reason})`, detail);
+      emitUpdaterStatus("error", detail);
+      return {
+        ok: false,
+        status: "error",
+        message: detail
+      };
+    } finally {
+      updaterCheckInFlight = false;
+    }
   };
 
   updaterStartupTimer = setTimeout(() => {
-    runCheck("startup");
+    if (runUpdaterCheck) {
+      runUpdaterCheck("startup").catch(() => undefined);
+    }
   }, 1600);
   // Retry once on startup to avoid one-time network jitter causing a silent miss.
   updaterRetryTimer = setTimeout(() => {
-    runCheck("startup-retry");
+    if (runUpdaterCheck) {
+      runUpdaterCheck("startup-retry").catch(() => undefined);
+    }
   }, 18000);
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle("ai-novel:check-for-updates", async () => {
+    if (!runUpdaterCheck) {
+      return {
+        ok: false,
+        status: "unavailable",
+        message: "更新器尚未初始化。"
+      };
+    }
+    return runUpdaterCheck("manual");
+  });
+
   ipcMain.handle("ai-novel:pick-directory", async () => {
     const result = await dialog.showOpenDialog({
       title: "选择要导入的小说目录",

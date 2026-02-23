@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   activateProject,
   cancelJob,
+  checkForUpdates,
   createSnapshot,
   createProject,
   enqueueJob,
@@ -18,6 +19,7 @@ import {
   listProjects,
   listSnapshots,
   listUsageEvents,
+  onUpdaterStatus,
   pauseJob,
   pickDirectory,
   restoreSnapshot,
@@ -136,6 +138,9 @@ export default function App() {
   const [chapterNumber, setChapterNumber] = useState("1");
   const [error, setError] = useState("");
   const [statusHint, setStatusHint] = useState("正在连接本地服务...");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateHint, setUpdateHint] = useState("自动更新：应用启动后会自动检查。");
+  const [updateHintLevel, setUpdateHintLevel] = useState<"info" | "success" | "error">("info");
   const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
   const [usageEvents, setUsageEvents] = useState<UsageEvent[]>([]);
   const [modelCenter, setModelCenter] = useState<ModelCenterConfig | null>(null);
@@ -286,6 +291,61 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const teardown = onUpdaterStatus((status) => {
+      if (status.event === "checking") {
+        setUpdateHint(status.detail || "正在检查更新...");
+        setUpdateHintLevel("info");
+        return;
+      }
+      if (status.event === "update-available") {
+        const version = status.detail ? ` ${status.detail}` : "";
+        setUpdateHint(`发现新版本${version}，请在弹窗中选择是否下载。`);
+        setUpdateHintLevel("success");
+        return;
+      }
+      if (status.event === "downloading") {
+        const percent = Number(status.detail);
+        setUpdateHint(
+          Number.isFinite(percent) ? `正在下载更新：${percent.toFixed(1)}%` : "正在下载更新..."
+        );
+        setUpdateHintLevel("info");
+        return;
+      }
+      if (status.event === "downloaded") {
+        setUpdateHint(
+          status.detail
+            ? `更新 ${status.detail} 已下载完成，等待你确认安装。`
+            : "更新包已下载完成，等待你确认安装。"
+        );
+        setUpdateHintLevel("success");
+        return;
+      }
+      if (status.event === "up-to-date") {
+        setUpdateHint(status.detail || "当前已是最新版本。");
+        setUpdateHintLevel("success");
+        return;
+      }
+      if (status.event === "deferred") {
+        setUpdateHint(
+          status.detail ? `你已选择稍后处理版本 ${status.detail}。` : "你已选择稍后处理更新。"
+        );
+        setUpdateHintLevel("info");
+        return;
+      }
+      if (status.event === "not-packaged") {
+        setUpdateHint(status.detail || "开发模式不支持内置自动更新。");
+        setUpdateHintLevel("info");
+        return;
+      }
+      if (status.event === "error") {
+        setUpdateHint(status.detail ? `更新失败：${status.detail}` : "更新失败，请稍后重试。");
+        setUpdateHintLevel("error");
+      }
+    });
+    return () => teardown();
+  }, []);
+
+  useEffect(() => {
     if (!activeProjectId) return;
     setSnapshotDiff(null);
     setBatchReprocessHint("");
@@ -297,20 +357,41 @@ export default function App() {
     });
     refreshCosts(activeProjectId).catch(() => undefined);
     refreshModelCenter(activeProjectId).catch(() => undefined);
-    refreshConsistency(activeProjectId).catch(() => undefined);
-    refreshSnapshots(activeProjectId).catch(() => undefined);
-    const timer = window.setInterval(() => {
+    const jobsTimer = window.setInterval(() => {
       refreshJobs(activeProjectId).catch(() => undefined);
-      refreshCosts(activeProjectId).catch(() => undefined);
-      refreshConsistency(activeProjectId).catch(() => undefined);
-      refreshSnapshots(activeProjectId).catch(() => undefined);
     }, 3500);
-    return () => clearInterval(timer);
+    const costsTimer = window.setInterval(() => {
+      refreshCosts(activeProjectId).catch(() => undefined);
+    }, 15000);
+    return () => {
+      clearInterval(jobsTimer);
+      clearInterval(costsTimer);
+    };
+  }, [activeProjectId]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    refreshConsistency(activeProjectId).catch(() => undefined);
+    const consistencyTimer = window.setInterval(() => {
+      refreshConsistency(activeProjectId).catch(() => undefined);
+    }, 12000);
+    return () => clearInterval(consistencyTimer);
   }, [
     activeProjectId,
     consistencyStatusFilter,
     consistencySeverityFilter,
-    consistencyChapterFilter,
+    consistencyChapterFilter
+  ]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    refreshSnapshots(activeProjectId).catch(() => undefined);
+    const snapshotsTimer = window.setInterval(() => {
+      refreshSnapshots(activeProjectId).catch(() => undefined);
+    }, 16000);
+    return () => clearInterval(snapshotsTimer);
+  }, [
+    activeProjectId,
     snapshotChapterNumber,
     snapshotSearchQuery,
     snapshotFilterTags,
@@ -345,6 +426,29 @@ export default function App() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "选择目录失败");
+    }
+  }
+
+  async function manualCheckUpdate() {
+    if (checkingUpdate) return;
+    setError("");
+    setCheckingUpdate(true);
+    try {
+      setUpdateHint("正在发起手动检查...");
+      setUpdateHintLevel("info");
+      const result = await checkForUpdates();
+      if (!result.ok) {
+        setUpdateHint(result.message || "手动检查未执行。");
+        setUpdateHintLevel(result.status === "not-packaged" ? "info" : "error");
+        return;
+      }
+      setUpdateHint(result.message || "已发起手动检查，请稍候结果。");
+      setUpdateHintLevel("info");
+    } catch (err) {
+      setUpdateHint(err instanceof Error ? `更新检查失败：${err.message}` : "更新检查失败");
+      setUpdateHintLevel("error");
+    } finally {
+      setCheckingUpdate(false);
     }
   }
 
@@ -928,14 +1032,20 @@ export default function App() {
         <section className="jobs-panel help-panel">
           <div className="panel-topline">
             <h3>Help</h3>
-            <span className="box-note">常见操作提示</span>
+            <div className="help-actions">
+              <span className="box-note">常见操作提示</span>
+              <button type="button" className="ghost-btn" onClick={manualCheckUpdate} disabled={checkingUpdate}>
+                {checkingUpdate ? "检查中..." : "手动检查更新"}
+              </button>
+            </div>
           </div>
+          <p className={`update-note is-${updateHintLevel}`}>{updateHint}</p>
           <ul className="help-list">
             <li>先在左侧创建并选中一个项目，再提交写作、重处理和导入任务。</li>
             <li>导入旧书时请选择小说根目录（至少包含 chapters），建议勾选数据库与 LightRAG。</li>
             <li>手动改稿后请执行“提交 reprocess”，让状态库和检索索引重新同步。</li>
             <li>模型 API 更换入口在“模型配置中心”，保存后会立即作用于新任务。</li>
-            <li>自动更新在应用启动时检查；发现新版本会先询问你是否下载，下载完成再提示安装。</li>
+            <li>自动更新在应用启动时检查；也可以点击“手动检查更新”立即验证发布链路。</li>
           </ul>
         </section>
 

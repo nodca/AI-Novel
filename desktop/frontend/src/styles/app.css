@@ -277,6 +277,29 @@ button:disabled {
   margin-bottom: 0;
 }
 
+.help-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.update-note {
+  margin: 6px 0 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.update-note.is-success {
+  color: #2f7f46;
+}
+
+.update-note.is-error {
+  color: var(--danger);
+}
+
 .help-list {
   margin: 8px 0 0;
   padding-left: 18px;
@@ -864,6 +887,11 @@ button:disabled {
   }
 
   .snapshot-favorite-toggle {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .help-actions {
     width: 100%;
     justify-content: flex-start;
   }

@@ -21,11 +21,25 @@ declare global {
       apiBaseUrl?: string;
       platform?: string;
       pickDirectory?: () => Promise<string | null>;
+      checkForUpdates?: () => Promise<UpdateCheckResult>;
+      onUpdaterStatus?: (callback: (status: UpdaterStatus) => void) => (() => void) | void;
     };
   }
 }
 
 const API_BASE = window.aiNovelDesktop?.apiBaseUrl ?? "http://127.0.0.1:8008";
+
+export type UpdateCheckResult = {
+  ok: boolean;
+  status: string;
+  message?: string;
+};
+
+export type UpdaterStatus = {
+  event: string;
+  detail?: string;
+  at?: string;
+};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, {
@@ -80,6 +94,28 @@ export async function pickDirectory(): Promise<string | null> {
     return null;
   }
   return window.aiNovelDesktop.pickDirectory();
+}
+
+export async function checkForUpdates(): Promise<UpdateCheckResult> {
+  if (!window.aiNovelDesktop?.checkForUpdates) {
+    return {
+      ok: false,
+      status: "unsupported",
+      message: "当前运行环境不支持手动更新检查。"
+    };
+  }
+  return window.aiNovelDesktop.checkForUpdates();
+}
+
+export function onUpdaterStatus(listener: (status: UpdaterStatus) => void): () => void {
+  if (!window.aiNovelDesktop?.onUpdaterStatus) {
+    return () => undefined;
+  }
+  const teardown = window.aiNovelDesktop.onUpdaterStatus(listener);
+  if (typeof teardown === "function") {
+    return teardown;
+  }
+  return () => undefined;
 }
 
 export async function activateProject(projectId: string): Promise<ProjectInfo> {

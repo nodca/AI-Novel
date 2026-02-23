@@ -48,6 +48,32 @@ git push origin desktop-v0.1.1
 
 4. GitHub Actions 里的 `windows-desktop-release` 会自动运行并发布 Release 资产
 
+### 一键发布脚本（推荐）
+
+仓库根目录可直接运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1
+```
+
+默认行为：
+
+- 要求工作区干净（避免误发）
+- 自动将 `desktop/package.json` 从当前版本升级一个 patch（例如 `0.1.1 -> 0.1.2`）
+- 自动提交、推送 `main`
+- 自动创建并推送 `desktop-v<version>` tag，触发 GitHub Actions 发布
+
+可选参数：
+
+```powershell
+# 升 minor / major
+powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1 -Bump minor
+powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1 -Bump major
+
+# 指定版本号
+powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1 -Version 0.2.0
+```
+
 发布成功后，Release 中应看到：
 
 - 安装包 `.exe`

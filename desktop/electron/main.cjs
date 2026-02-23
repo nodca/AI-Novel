@@ -87,7 +87,8 @@ function setupAutoUpdater(win) {
 
   const updateChannel = String(process.env.AI_NOVEL_UPDATE_CHANNEL || "stable").toLowerCase();
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  // Install only after explicit user confirmation instead of silent apply on quit.
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = updateChannel !== "stable";
 
   autoUpdater.on("checking-for-update", () => {
@@ -113,7 +114,14 @@ function setupAutoUpdater(win) {
 
   autoUpdater.on("update-downloaded", async (info) => {
     console.log("[updater] update-downloaded", info.version);
-    const result = await dialog.showMessageBox(win, {
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) {
+        win.restore();
+      }
+      win.show();
+      win.focus();
+    }
+    const result = await dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
       type: "info",
       buttons: ["立即重启更新", "稍后"],
       defaultId: 0,
@@ -128,7 +136,9 @@ function setupAutoUpdater(win) {
   });
 
   setTimeout(() => {
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    // Use explicit check to avoid system-level "downloaded" notification copy
+    // that can conflict with our custom decision dialog.
+    autoUpdater.checkForUpdates().catch((err) => {
       console.error("[updater] check failed", err ? err.message : "unknown");
     });
   }, 1600);

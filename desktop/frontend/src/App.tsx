@@ -779,6 +779,19 @@ export default function App() {
   const estimatedUsd = costSummary?.cost_estimate_usd ?? 0;
   const consistencyOpen = consistencySummary?.open_count ?? 0;
   const consistencyErrors = consistencySummary?.error_count ?? 0;
+  const importDisabledReason = useMemo(() => {
+    if (importingProject) {
+      return "正在导入中，请稍候...";
+    }
+    if (!activeProject) {
+      return "请先在左侧选择或创建一个项目。";
+    }
+    if (!importSourceRoot.trim()) {
+      return "请先选择要导入的小说根目录。";
+    }
+    return "";
+  }, [importingProject, activeProject, importSourceRoot]);
+  const importButtonDisabled = importDisabledReason.length > 0;
 
   return (
     <div className="app-shell">
@@ -828,10 +841,13 @@ export default function App() {
           <button
             type="button"
             onClick={importIntoActiveProject}
-            disabled={!activeProject || importingProject}
+            disabled={importButtonDisabled}
           >
             {importingProject ? "导入中..." : "导入到当前项目"}
           </button>
+          <p className={`import-note ${importButtonDisabled ? "import-note-warning" : ""}`}>
+            {importDisabledReason || "提示：导入会复制文件到当前项目工作区，不会修改原目录。"}
+          </p>
           {importHint && <p className="import-note">{importHint}</p>}
         </section>
         <div className="project-list">
@@ -886,6 +902,20 @@ export default function App() {
               {costSummary?.output_tokens ?? 0} tokens
             </small>
           </article>
+        </section>
+
+        <section className="jobs-panel help-panel">
+          <div className="panel-topline">
+            <h3>Help</h3>
+            <span className="box-note">常见操作提示</span>
+          </div>
+          <ul className="help-list">
+            <li>先在左侧创建并选中一个项目，再提交写作、重处理和导入任务。</li>
+            <li>导入旧书时请选择小说根目录（至少包含 chapters），建议勾选数据库与 LightRAG。</li>
+            <li>手动改稿后请执行“提交 reprocess”，让状态库和检索索引重新同步。</li>
+            <li>模型 API 更换入口在“模型配置中心”，保存后会立即作用于新任务。</li>
+            <li>自动更新在应用启动时检查；有新版本会下载并提示是否重启安装。</li>
+          </ul>
         </section>
 
         <section className="composer">

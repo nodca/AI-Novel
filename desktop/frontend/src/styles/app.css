@@ -97,6 +97,10 @@ body,
   line-height: 1.45;
 }
 
+.import-note-warning {
+  color: #9f563f;
+}
+
 .new-project-form input,
 .composer-row input {
   border: 1px solid var(--line);
@@ -252,6 +256,24 @@ button:disabled {
 
 .panel-topline h3 {
   margin: 0 0 10px;
+}
+
+.help-panel .panel-topline h3 {
+  margin-bottom: 0;
+}
+
+.help-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.help-list li::marker {
+  color: var(--accent);
 }
 
 .model-center-grid {

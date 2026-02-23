@@ -5,6 +5,8 @@ const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
 let backendProcess = null;
+let updaterStartupTimer = null;
+let updaterRetryTimer = null;
 
 function resolveBundledBackendExe() {
   const candidate = path.join(process.resourcesPath, "backend", "ai-novel-backend.exe");
@@ -86,17 +88,71 @@ function setupAutoUpdater(win) {
   }
 
   const updateChannel = String(process.env.AI_NOVEL_UPDATE_CHANNEL || "stable").toLowerCase();
-  autoUpdater.autoDownload = true;
-  // Install only after explicit user confirmation instead of silent apply on quit.
+  // Startup -> ask user first -> download after confirmation -> ask install after download.
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = updateChannel !== "stable";
+  // Prefer reliability over patch size. Differential download can fail silently on some machines.
+  autoUpdater.disableDifferentialDownload = true;
+
+  let checkInFlight = false;
+  let promptingUpdate = false;
+  let downloadingUpdate = false;
+  let deferredVersion = "";
 
   autoUpdater.on("checking-for-update", () => {
     console.log("[updater] checking-for-update");
   });
 
-  autoUpdater.on("update-available", (info) => {
+  autoUpdater.on("update-available", async (info) => {
     console.log("[updater] update-available", info.version);
+    if (promptingUpdate || downloadingUpdate) {
+      return;
+    }
+    const version = String(info.version || "");
+    if (deferredVersion && version && deferredVersion === version) {
+      console.log("[updater] skipped deferred version", version);
+      return;
+    }
+    promptingUpdate = true;
+    try {
+      if (win && !win.isDestroyed()) {
+        if (win.isMinimized()) {
+          win.restore();
+        }
+        win.show();
+        win.focus();
+      }
+      const result = await dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+        type: "info",
+        buttons: ["立即下载更新", "稍后"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "发现新版本",
+        message: version ? `检测到新版本 ${version}` : "检测到新版本",
+        detail: "是否现在开始下载更新？下载完成后会再询问是否立即重启安装。"
+      });
+      if (result.response !== 0) {
+        deferredVersion = version;
+        return;
+      }
+      downloadingUpdate = true;
+      autoUpdater.downloadUpdate().catch(async (err) => {
+        downloadingUpdate = false;
+        const detail = err && err.message ? err.message : "unknown";
+        console.error("[updater] download failed", detail);
+        await dialog.showMessageBox(win && !win.isDestroyed() ? win : undefined, {
+          type: "error",
+          buttons: ["知道了"],
+          defaultId: 0,
+          title: "更新下载失败",
+          message: "未能下载更新包",
+          detail: `原因：${detail}`
+        });
+      });
+    } finally {
+      promptingUpdate = false;
+    }
   });
 
   autoUpdater.on("update-not-available", () => {
@@ -104,6 +160,7 @@ function setupAutoUpdater(win) {
   });
 
   autoUpdater.on("error", (err) => {
+    downloadingUpdate = false;
     console.error("[updater] error", err ? err.message : "unknown");
   });
 
@@ -113,6 +170,7 @@ function setupAutoUpdater(win) {
   });
 
   autoUpdater.on("update-downloaded", async (info) => {
+    downloadingUpdate = false;
     console.log("[updater] update-downloaded", info.version);
     if (win && !win.isDestroyed()) {
       if (win.isMinimized()) {
@@ -135,13 +193,28 @@ function setupAutoUpdater(win) {
     }
   });
 
-  setTimeout(() => {
-    // Use explicit check to avoid system-level "downloaded" notification copy
-    // that can conflict with our custom decision dialog.
-    autoUpdater.checkForUpdates().catch((err) => {
-      console.error("[updater] check failed", err ? err.message : "unknown");
-    });
+  const runCheck = (reason) => {
+    if (checkInFlight) {
+      return;
+    }
+    checkInFlight = true;
+    autoUpdater
+      .checkForUpdates()
+      .catch((err) => {
+        console.error(`[updater] check failed (${reason})`, err ? err.message : "unknown");
+      })
+      .finally(() => {
+        checkInFlight = false;
+      });
+  };
+
+  updaterStartupTimer = setTimeout(() => {
+    runCheck("startup");
   }, 1600);
+  // Retry once on startup to avoid one-time network jitter causing a silent miss.
+  updaterRetryTimer = setTimeout(() => {
+    runCheck("startup-retry");
+  }, 18000);
 }
 
 app.whenReady().then(() => {
@@ -162,6 +235,14 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  if (updaterStartupTimer) {
+    clearTimeout(updaterStartupTimer);
+    updaterStartupTimer = null;
+  }
+  if (updaterRetryTimer) {
+    clearTimeout(updaterRetryTimer);
+    updaterRetryTimer = null;
+  }
   stopBackend();
 });
 

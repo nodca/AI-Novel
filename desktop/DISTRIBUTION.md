@@ -56,6 +56,10 @@ git push origin desktop-v0.1.1
 powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1
 ```
 
+或直接双击仓库根目录的：
+
+- `release-desktop.bat`（默认 patch 发布）
+
 默认行为：
 
 - 要求工作区干净（避免误发）
@@ -72,6 +76,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1 -Bump maj
 
 # 指定版本号
 powershell -ExecutionPolicy Bypass -File .\scripts\release-desktop.ps1 -Version 0.2.0
+
+# 也可通过 bat 传参
+.\release-desktop.bat -Version 0.2.0
 ```
 
 发布成功后，Release 中应看到：

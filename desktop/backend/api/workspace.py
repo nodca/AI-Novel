@@ -409,7 +409,7 @@ class WorkspaceService:
                 "timeout": 600,
             },
             "lightrag": {
-                "llm": {"model": "qwen3.5-plus", "api_key": "", "base_url": "", "timeout": 180, "max_tokens": 4096},
+                "llm": {"model": "Qwen/Qwen3-8B", "api_key": "", "base_url": "", "timeout": 180, "max_tokens": 4096},
                 "embedding": {"model": "BAAI/bge-m3", "api_key": "", "base_url": "", "dim": 1024, "max_tokens": 8192},
                 "rerank": {"model": "BAAI/bge-reranker-v2-m3", "api_key": "", "base_url": ""},
             },

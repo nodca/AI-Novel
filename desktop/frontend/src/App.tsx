@@ -166,6 +166,8 @@ export default function App() {
   const [reprocessBusy, setReprocessBusy] = useState(false);
   const [jobActionLoadingId, setJobActionLoadingId] = useState<string | null>(null);
   const [savingModelCenter, setSavingModelCenter] = useState(false);
+  const [modelCenterHint, setModelCenterHint] = useState("");
+  const [modelCenterHintLevel, setModelCenterHintLevel] = useState<"info" | "success" | "error">("info");
   const [newProviderId, setNewProviderId] = useState("");
   const [newProviderKind, setNewProviderKind] =
     useState<(typeof PROVIDER_KIND_OPTIONS)[number]>("custom");
@@ -288,6 +290,8 @@ export default function App() {
     setSnapshotDiff(null);
     setBatchReprocessHint("");
     setImportHint("");
+    setModelCenterHint("");
+    setModelCenterHintLevel("info");
     refreshJobs(activeProjectId).catch((err) => {
       setError(err instanceof Error ? err.message : "读取任务失败");
     });
@@ -312,6 +316,11 @@ export default function App() {
     snapshotFilterTags,
     snapshotFavoritesOnly
   ]);
+
+  function markModelCenterEdited() {
+    setModelCenterHint("模型配置有未保存改动");
+    setModelCenterHintLevel("info");
+  }
 
   async function onCreateProject(e: FormEvent) {
     e.preventDefault();
@@ -459,6 +468,7 @@ export default function App() {
     field: "kind" | "api_key" | "base_url",
     value: string
   ) {
+    markModelCenterEdited();
     setModelCenter((prev) => {
       if (!prev) return prev;
       return {
@@ -497,6 +507,7 @@ export default function App() {
       return;
     }
     setError("");
+    markModelCenterEdited();
     setModelCenter((prev) => {
       if (!prev) return prev;
       return {
@@ -524,6 +535,7 @@ export default function App() {
       return;
     }
     setError("");
+    markModelCenterEdited();
     setModelCenter((prev) => {
       if (!prev) return prev;
       const nextProviders = { ...prev.providers };
@@ -541,6 +553,7 @@ export default function App() {
   }
 
   function updateRoleProvider(roleId: string, providerId: string) {
+    markModelCenterEdited();
     setModelCenter((prev) => {
       if (!prev) return prev;
       const current = prev.roles[roleId] ?? { provider: "", model: "" };
@@ -562,6 +575,7 @@ export default function App() {
     field: "model" | "temperature" | "timeout" | "max_tokens" | "dim",
     value: string
   ) {
+    markModelCenterEdited();
     setModelCenter((prev) => {
       if (!prev) return prev;
       const current = prev.roles[roleId] ?? { provider: "", model: "" };
@@ -585,6 +599,7 @@ export default function App() {
   }
 
   function updateRuntimeField(field: "max_retries" | "timeout", value: string) {
+    markModelCenterEdited();
     setModelCenter((prev) => {
       if (!prev) return prev;
       const parsed = Number(value);
@@ -605,8 +620,14 @@ export default function App() {
     try {
       const saved = await updateModelCenter(activeProject.id, modelCenter);
       setModelCenter(saved);
+      const persisted = await getModelCenter(activeProject.id);
+      setModelCenter(persisted);
+      setModelCenterHint(`模型配置已保存（${activeProject.name}）`);
+      setModelCenterHintLevel("success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存模型配置失败");
+      setModelCenterHint("保存失败，请检查配置项后重试");
+      setModelCenterHintLevel("error");
     } finally {
       setSavingModelCenter(false);
     }
@@ -1328,6 +1349,7 @@ export default function App() {
               {savingModelCenter ? "保存中..." : "保存模型配置"}
             </button>
           </div>
+          {modelCenterHint && <p className={`model-center-note is-${modelCenterHintLevel}`}>{modelCenterHint}</p>}
           {!modelCenter ? (
             <div className="empty-note">请选择项目后加载模型配置。</div>
           ) : (

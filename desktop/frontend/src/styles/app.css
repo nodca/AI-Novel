@@ -258,6 +258,21 @@ button:disabled {
   margin: 0 0 10px;
 }
 
+.model-center-note {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.model-center-note.is-success {
+  color: #2f7f46;
+}
+
+.model-center-note.is-error {
+  color: var(--danger);
+}
+
 .help-panel .panel-topline h3 {
   margin-bottom: 0;
 }

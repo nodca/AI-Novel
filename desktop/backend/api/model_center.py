@@ -233,7 +233,7 @@ def project_config_to_model_center(config: Dict[str, Any]) -> Dict[str, Any]:
     roles["rag_llm"] = {
         **_as_dict(roles.get("rag_llm")),
         "provider": rag_llm_provider,
-        "model": _as_str(rag_llm.get("model"), "qwen3.5-plus"),
+        "model": _as_str(rag_llm.get("model"), "Qwen/Qwen3-8B"),
         "timeout": _as_int(rag_llm.get("timeout"), 180),
         "max_tokens": _as_int(rag_llm.get("max_tokens"), 4096),
     }
@@ -353,7 +353,7 @@ def model_center_to_config_patch(model_center: Dict[str, Any]) -> Dict[str, Any]
         },
         "lightrag": {
             "llm": {
-                "model": _as_str(rag_llm.get("model"), "qwen3.5-plus"),
+                "model": _as_str(rag_llm.get("model"), "Qwen/Qwen3-8B"),
                 "api_key": _as_str(rag_llm_provider.get("api_key")),
                 "base_url": _as_str(rag_llm_provider.get("base_url")),
                 "timeout": _as_int(rag_llm.get("timeout"), 180),
